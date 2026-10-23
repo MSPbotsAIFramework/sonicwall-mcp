@@ -109,20 +109,20 @@ that they're an NSM SaaS subscriber before assuming this will work.
 
 ## Tools
 
-授权需要 `X-Sonicwall-Msw-Api-Key` 请求头（见下方授权说明）。
+Authorization requires the `X-Sonicwall-Msw-Api-Key` request header (see the authorization notes below).
 
-| Tool | 功能 | 参数 |
+| Tool | Description | Parameters |
 |---|---|---|
-| `sonicwall_list_tenants` | 列出该 API Key 能看到的租户（仅当账号下有多个租户时需要用来消歧义） | 无 |
-| `sonicwall_list_devices` | 列出该 NSM 租户管理的全部防火墙 | 无 |
-| `sonicwall_list_vulnerable_devices` | 列出存在已知漏洞的设备（租户级，不需要 serial） | 无 |
-| `sonicwall_get_device_status` | 获取某台防火墙的实时系统状态 | `serial`(必填) |
-| `sonicwall_get_security_services_status` | 获取某台防火墙的安全服务（网关AV/IPS等）状态 | `serial`(必填) |
-| `sonicwall_list_firewall_zones` | 列出某台防火墙配置的安全区域 | `serial`(必填) |
-| `sonicwall_get_system_logs` | 获取某台防火墙的 NSM 采集日志 | `serial`(必填)、`limit`(可选) |
-| `sonicwall_get_attack_analytics` | 按维度获取攻击/威胁分析（发起方/目标/端口/国家/处置动作） | `serial`(必填)、`dimension`(必填)、`limit`(可选) |
+| `sonicwall_list_tenants` | List the tenants visible to this API Key (only needed for disambiguation when the account has multiple tenants) | None |
+| `sonicwall_list_devices` | List all firewalls managed by this NSM tenant | None |
+| `sonicwall_list_vulnerable_devices` | List devices with known vulnerabilities (tenant-level, no serial needed) | None |
+| `sonicwall_get_device_status` | Get the real-time system status of a firewall | `serial` (required) |
+| `sonicwall_get_security_services_status` | Get the status of a firewall's security services (Gateway AV/IPS, etc.) | `serial` (required) |
+| `sonicwall_list_firewall_zones` | List the security zones configured on a firewall | `serial` (required) |
+| `sonicwall_get_system_logs` | Get the NSM-collected logs of a firewall | `serial` (required), `limit` (optional) |
+| `sonicwall_get_attack_analytics` | Get attack/threat analytics by dimension (initiator/target/port/country/action taken) | `serial` (required), `dimension` (required), `limit` (optional) |
 
-全部只读，没有配置修改或重启类工具。
+All tools are read-only; there are no configuration-change or reboot tools.
 
 ## Quick Start
 
@@ -150,20 +150,20 @@ curl http://localhost:8080/health
 
 No credentials are required for the health endpoint.
 
-## 授权参数说明 (Authentication)
+## Authentication
 
 Every request to `/mcp` must include the following HTTP headers (provided by the
 MCP caller/gateway):
 
-| Header | 类型 | 是否必填 | 字段描述 |
+| Header | Type | Required | Description |
 |---|---|---|---|
-| `X-Sonicwall-Msw-Api-Key` | string | 必填 | 客户的长期 MySonicWall API Key（mysonicwall.com → My Workspace → User Groups → User list → Generate My API Key），建议用一个 NSM 角色为 ReadOnly 的专用账号生成。 |
-| `X-Sonicwall-Tenant-Name` | string | 可选 | 仅当这个 API Key 能看到多个租户时（例如 MSP 账号管理多个客户）才需要，按名称子串（大小写不敏感）匹配；账号下只有一个租户时可省略。 |
-| `X-Sonicwall-Nsm-Region` | string | 可选，默认 `uswest` | NSM SaaS 是多区域的（对应 `nsm-<region>.sonicwall.com`，欧洲客户用 `eucentral`），按客户 NSM 租户实际所在区域填写。 |
+| `X-Sonicwall-Msw-Api-Key` | string | Required | The customer's long-lived MySonicWall API Key (mysonicwall.com → My Workspace → User Groups → User list → Generate My API Key); it is recommended to generate it with a dedicated account whose NSM role is ReadOnly. |
+| `X-Sonicwall-Tenant-Name` | string | Optional | Only needed when this API Key can see multiple tenants (e.g. an MSP account managing multiple customers); matched by name substring (case-insensitive); may be omitted when the account has only one tenant. |
+| `X-Sonicwall-Nsm-Region` | string | Optional, default `uswest` | NSM SaaS is multi-region (corresponds to `nsm-<region>.sonicwall.com`; European customers use `eucentral`); fill in the region where the customer's NSM tenant actually resides. |
 
 Missing the required header returns `401 Unauthorized`.
 
-**认证机制**：本服务收到 API Key 后，自己走完 SonicWall 官方文档描述的 3 步换 token 流程（`GET mysonicwall.com/api/hgms/get-cloud-tenants` → `POST api.mysonicwall.com/api/generate-cscaccesscode` → `POST nsm-<region>.sonicwall.com/api/manager/auth/sso`），再拿换到的 NSM bearer token 去调真正的业务接口——不是网关代发 token。**每次调用都重新走一遍这 3 步，从不缓存**（哪怕 NSM token 官方文档说有效期约 8 小时）——多租户场景下缓存 token 容易在并发请求间串号，这跟 fleet 里其它厂商（`datto-rmm-mcp`/`easydmarc-mcp`/`oitvoip-mcp`/`ingrammicro-mcp`）的处理原则一致。
+**Authentication mechanism**: after receiving the API Key, this service itself runs through the 3-step token exchange flow described in the official SonicWall documentation (`GET mysonicwall.com/api/hgms/get-cloud-tenants` → `POST api.mysonicwall.com/api/generate-cscaccesscode` → `POST nsm-<region>.sonicwall.com/api/manager/auth/sso`), then uses the obtained NSM bearer token to call the actual business endpoints - the gateway does not issue the token on its behalf. **Every call re-runs these 3 steps and never caches** (even though the official docs say the NSM token is valid for about 8 hours) - in multi-tenant scenarios, caching tokens can easily mix up accounts between concurrent requests, which is consistent with how the other vendors in the fleet (`datto-rmm-mcp`/`easydmarc-mcp`/`oitvoip-mcp`/`ingrammicro-mcp`) handle it.
 
 ## Environment Variables
 
@@ -182,7 +182,7 @@ Connect your MCP client with:
 - Transport: `http` (Streamable HTTP / SSE)
 - Headers: `X-Sonicwall-Msw-Api-Key` (required), `X-Sonicwall-Tenant-Name` / `X-Sonicwall-Nsm-Region` (optional)
 
-## 测试示例 (Test Example)
+## Test Example
 
 ```bash
 curl -X POST http://localhost:8080/mcp \
@@ -197,8 +197,8 @@ curl -X POST http://localhost:8080/mcp \
   }'
 ```
 
-> ⚠️ 本仓库为公开仓库，请勿在任何提交的文件中写入真实的客户 API Key，
-> 上面的占位符仅为示意。
+> ⚠️ This is a public repository; do not write real customer API Keys into any committed file.
+> The placeholders above are for illustration only.
 
 ## Known Gaps
 
